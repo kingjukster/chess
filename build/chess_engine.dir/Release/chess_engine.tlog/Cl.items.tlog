@@ -1,0 +1,9 @@
+C:\Users\horne\projects\chess_engine\chess\main.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\main.obj
+C:\Users\horne\projects\chess_engine\chess\board\position.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\position.obj
+C:\Users\horne\projects\chess_engine\chess\movegen\attacks.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\attacks.obj
+C:\Users\horne\projects\chess_engine\chess\movegen\movegen.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\movegen.obj
+C:\Users\horne\projects\chess_engine\chess\eval\classic_eval.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\classic_eval.obj
+C:\Users\horne\projects\chess_engine\chess\nnue\nnue_eval.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\nnue_eval.obj
+C:\Users\horne\projects\chess_engine\chess\nnue\nnue_loader.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\nnue_loader.obj
+C:\Users\horne\projects\chess_engine\chess\search\search.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\search.obj
+C:\Users\horne\projects\chess_engine\chess\uci\uci.cpp;C:\Users\horne\projects\chess_engine\chess\build\chess_engine.dir\Release\uci.obj
