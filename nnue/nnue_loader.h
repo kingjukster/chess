@@ -10,13 +10,12 @@ namespace chess {
 // Supports loading weights from binary files
 class NnueLoader {
 public:
-    // Load network from file
-    // Format: binary file with:
-    // - Header (version, input_size, hidden_size, output_size)
-    // - Input layer weights (input_size * hidden_size * sizeof(int16_t))
-    // - Hidden layer bias (hidden_size * sizeof(int16_t))
-    // - Output layer weights (hidden_size * output_size * sizeof(int16_t))
-    // - Output layer bias (output_size * sizeof(int16_t))
+    enum NetworkFormat {
+        NATIVE,      // Our custom format
+        STOCKFISH    // Stockfish NNUE format
+    };
+    
+    // Auto-detect and load network from file
     static bool load_from_file(const std::string& filename, 
                                int16_t*& input_weights,
                                int16_t*& hidden_bias,
@@ -25,6 +24,40 @@ public:
                                int& input_size,
                                int& hidden_size,
                                int& output_size);
+    
+    // Load network with explicit format
+    static bool load_from_file_format(const std::string& filename,
+                                      NetworkFormat format,
+                                      int16_t*& input_weights,
+                                      int16_t*& hidden_bias,
+                                      int16_t*& output_weights,
+                                      int16_t*& output_bias,
+                                      int& input_size,
+                                      int& hidden_size,
+                                      int& output_size);
+    
+    // Detect network format from file
+    static NetworkFormat detect_format(const std::string& filename);
+    
+    // Load native format
+    static bool load_native_format(const std::string& filename,
+                                   int16_t*& input_weights,
+                                   int16_t*& hidden_bias,
+                                   int16_t*& output_weights,
+                                   int16_t*& output_bias,
+                                   int& input_size,
+                                   int& hidden_size,
+                                   int& output_size);
+    
+    // Load Stockfish format
+    static bool load_stockfish_format(const std::string& filename,
+                                      int16_t*& input_weights,
+                                      int16_t*& hidden_bias,
+                                      int16_t*& output_weights,
+                                      int16_t*& output_bias,
+                                      int& input_size,
+                                      int& hidden_size,
+                                      int& output_size);
     
     // Create a default/random network (for testing)
     static void create_default_network(int16_t*& input_weights,
@@ -35,7 +68,7 @@ public:
                                        int hidden_size,
                                        int output_size);
     
-    // Save network to file
+    // Save network to file (native format)
     static bool save_to_file(const std::string& filename,
                              const int16_t* input_weights,
                              const int16_t* hidden_bias,

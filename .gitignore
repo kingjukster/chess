@@ -1,0 +1,111 @@
+# Build artifacts
+build/
+build-*/
+cmake-build-*/
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+*.vcxproj
+*.vcxproj.filters
+*.sln
+*.dir/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.code-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Python artifacts (for training scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Training data and large files
+*.bin
+*.nnue
+*.pgn
+*.epd
+training_data/
+data/
+logs/
+*.log
+
+# Profiling and debugging
+*.dSYM/
+*.su
+*.idb
+*.pdb
+callgrind.out.*
+perf.data
+perf.data.old
+gmon.out
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage/
+htmlcov/
+
+# Benchmark results
+benchmark_results.json
+*_benchmark.json
+
+# ELO test outputs
+simple_elo_test_*.json
+elo_test_results_*.json
+
+# Documentation build
+docs/_build/
+site/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~.nib

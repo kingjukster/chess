@@ -4,6 +4,7 @@
 #include <sstream>
 #include <random>
 #include <cstring>
+#include <iostream>
 
 namespace chess {
 
@@ -80,17 +81,33 @@ void Position::move_piece(Square from, Square to) {
 }
 
 void Position::update_castling_rights(Square sq) {
+    int old_rights = castlingRights;
+    
     // Remove castling rights if rook or king moves
-    if (sq == W_KING_START || sq == W_ROOK_OO || sq == W_ROOK_OOO) {
+    if (sq == W_KING_START) {
         castlingRights &= ~WHITE_CASTLING;
     }
-    if (sq == B_KING_START || sq == B_ROOK_OO || sq == B_ROOK_OOO) {
+    if (sq == W_ROOK_OO) {
+        castlingRights &= ~WHITE_OO;
+    }
+    if (sq == W_ROOK_OOO) {
+        castlingRights &= ~WHITE_OOO;
+    }
+    if (sq == B_KING_START) {
         castlingRights &= ~BLACK_CASTLING;
     }
+    if (sq == B_ROOK_OO) {
+        castlingRights &= ~BLACK_OO;
+    }
+    if (sq == B_ROOK_OOO) {
+        castlingRights &= ~BLACK_OOO;
+    }
     
-    // Update zobrist
-    uint64_t old_key = zobristKey;
-    zobristKey ^= zobrist_castling[castlingRights];
+    // Update zobrist if castling rights changed
+    if (old_rights != castlingRights) {
+        zobristKey ^= zobrist_castling[old_rights];
+        zobristKey ^= zobrist_castling[castlingRights];
+    }
 }
 
 bool Position::make_move(Move move, UndoInfo& undo) {
@@ -178,9 +195,17 @@ bool Position::make_move(Move move, UndoInfo& undo) {
     }
     
     // Update en passant square
+    Square old_ep = epSquare;
     epSquare = SQ_NONE;
     if (type_of(pc) == PAWN && (rank_of(to) > rank_of(from) ? (rank_of(to) - rank_of(from)) : (rank_of(from) - rank_of(to))) == 2) {
         epSquare = stm == WHITE ? to - 8 : to + 8;
+    }
+    
+    // Update zobrist for en passant changes
+    if (old_ep != SQ_NONE) {
+        zobristKey ^= zobrist_ep[file_of(old_ep)];
+    }
+    if (epSquare != SQ_NONE) {
         zobristKey ^= zobrist_ep[file_of(epSquare)];
     }
     
@@ -204,16 +229,16 @@ void Position::unmake_move(Move move, const UndoInfo& undo) {
     stm = static_cast<Color>(1 - stm);
     gamePly--;
     
-    // Restore zobrist
-    zobristKey = undo.zobrist_key;
-    
-    // Restore position state
+    // Restore position state FIRST (before modifying pieces)
     castlingRights = undo.castling_rights;
     epSquare = undo.ep_square;
     rule50Count = undo.rule50;
     
     Square from = move.from();
     Square to = move.to();
+    
+    // Save the zobrist key to restore at the end
+    uint64_t saved_zobrist = undo.zobrist_key;
     
     // Handle promotion
     if (move.is_promotion()) {
@@ -230,18 +255,47 @@ void Position::unmake_move(Move move, const UndoInfo& undo) {
     }
     
     // Restore captured piece
-    if (undo.captured_piece != NO_PIECE_PIECE) {
-        if (move.is_en_passant()) {
-            put_piece(undo.nnue_delta.captured_piece, undo.nnue_delta.ep_captured_square);
-        } else {
-            put_piece(undo.captured_piece, undo.captured_square);
-        }
+    if (move.is_en_passant()) {
+        // For en passant, always restore the captured piece (it's at a different square)
+        put_piece(undo.nnue_delta.captured_piece, undo.nnue_delta.ep_captured_square);
+    } else if (undo.captured_piece != NO_PIECE_PIECE) {
+        // For normal captures, restore if there was a captured piece
+        put_piece(undo.captured_piece, undo.captured_square);
     }
+    
+    // Restore zobrist key (after all piece operations)
+    zobristKey = saved_zobrist;
     
     // Notify evaluator
     if (evaluator) {
         evaluator->on_unmake_move(*this, move, undo);
     }
+}
+
+void Position::make_null_move(UndoInfo& undo) {
+    // Save state for unmake
+    undo.castling_rights = castlingRights;
+    undo.ep_square = epSquare;
+    undo.rule50 = rule50Count;
+    undo.zobrist_key = zobristKey;
+    
+    // Null move: switch side, clear en passant, increment rule50
+    zobristKey ^= zobrist_side;
+    if (epSquare != SQ_NONE) {
+        zobristKey ^= zobrist_ep[file_of(epSquare)];
+        epSquare = SQ_NONE;
+    }
+    rule50Count++;
+    stm = static_cast<Color>(1 - stm);
+}
+
+void Position::unmake_null_move(const UndoInfo& undo) {
+    // Restore state
+    stm = static_cast<Color>(1 - stm);
+    castlingRights = undo.castling_rights;
+    epSquare = undo.ep_square;
+    rule50Count = undo.rule50;
+    zobristKey = undo.zobrist_key;
 }
 
 bool Position::is_check() const {
@@ -269,6 +323,7 @@ void Position::from_fen(const std::string& fen) {
     std::memset(byType, 0, sizeof(byType));
     kingSq[WHITE] = SQ_NONE;
     kingSq[BLACK] = SQ_NONE;
+    zobristKey = 0; // Clear zobrist key before parsing
     
     std::istringstream iss(fen);
     std::string token;
@@ -294,7 +349,16 @@ void Position::from_fen(const std::string& fen) {
                 case 'q': pc = make_piece(col, QUEEN); break;
                 case 'k': pc = make_piece(col, KING); break;
             }
-            put_piece(pc, sq);
+            // Place piece without updating zobrist (we'll recalculate it later)
+            Color c_piece = color_of(pc);
+            PieceType pt = type_of(pc);
+            Bitboard bb = 1ULL << sq;
+            byColor[c_piece] |= bb;
+            byType[pt] |= bb;
+            board[sq] = pc;
+            if (pt == KING) {
+                kingSq[c_piece] = sq;
+            }
             sq++;
         }
     }
@@ -402,6 +466,36 @@ Position::Position(const std::string& fen) : stm(WHITE), castlingRights(ANY_CAST
     kingSq[BLACK] = B_KING_START;
     init_zobrist();
     from_fen(fen);
+}
+
+Position::Position(const Position& other) {
+    // Copy bitboards and board state
+    std::memcpy(byColor, other.byColor, sizeof(byColor));
+    std::memcpy(byType, other.byType, sizeof(byType));
+    std::memcpy(board, other.board, sizeof(board));
+    std::memcpy(kingSq, other.kingSq, sizeof(kingSq));
+    
+    // Copy position state
+    stm = other.stm;
+    castlingRights = other.castlingRights;
+    epSquare = other.epSquare;
+    rule50Count = other.rule50Count;
+    gamePly = other.gamePly;
+    zobristKey = other.zobristKey;
+    
+    // Copy zobrist tables
+    std::memcpy(zobrist_piece, other.zobrist_piece, sizeof(zobrist_piece));
+    std::memcpy(zobrist_castling, other.zobrist_castling, sizeof(zobrist_castling));
+    std::memcpy(zobrist_ep, other.zobrist_ep, sizeof(zobrist_ep));
+    zobrist_side = other.zobrist_side;
+    
+    // Don't copy evaluator pointer - set to nullptr
+    evaluator = nullptr;
+    
+    // Initialize NNUE state (don't copy pointers)
+    nnue.initialized = false;
+    nnue.acc[WHITE] = nullptr;
+    nnue.acc[BLACK] = nullptr;
 }
 
 } // namespace chess

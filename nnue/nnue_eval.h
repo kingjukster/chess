@@ -67,6 +67,9 @@ private:
     
     Network network;
     
+    // Stockfish format uses 641 features per king (vs our 640); set when loading .nnue
+    bool use_stockfish_features = false;
+    
     // Feature extraction
     void extract_features(const Position& pos, Color perspective, std::vector<int>& features);
     void update_accumulator_incremental(Position& pos, Color side, const UndoInfo::NnueDelta& delta);

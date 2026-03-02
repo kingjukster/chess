@@ -14,6 +14,7 @@ class Position {
 public:
     Position();
     Position(const std::string& fen);
+    Position(const Position& other);
     
     // Position state
     Bitboard pieces(Color c) const { return byColor[c]; }
@@ -31,6 +32,10 @@ public:
     // Move making
     bool make_move(Move move, UndoInfo& undo);
     void unmake_move(Move move, const UndoInfo& undo);
+    
+    // Null move (for null-move pruning in search)
+    void make_null_move(UndoInfo& undo);
+    void unmake_null_move(const UndoInfo& undo);
     
     // Position queries
     bool is_check() const;

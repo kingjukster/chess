@@ -1,5 +1,10 @@
 # Chess Engine with NNUE-First Architecture
 
+[![CI](https://github.com/YOUR_USERNAME/YOUR_REPO/workflows/CI/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/ci.yml)
+[![Release](https://github.com/YOUR_USERNAME/YOUR_REPO/workflows/Release/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/YOUR_USERNAME/YOUR_REPO/branch/main/graph/badge.svg)](https://codecov.io/gh/YOUR_USERNAME/YOUR_REPO)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A modern chess engine built with NNUE (Efficiently Updatable Neural Networks) evaluation in mind from the start.
 
 ## Architecture
@@ -92,6 +97,70 @@ Expected results:
 - Depth 1: 20 moves
 - Depth 2: 400 moves
 - Depth 3: 8902 moves
+
+### Automated Testing
+
+The project includes comprehensive CI/CD pipelines:
+
+- **Continuous Integration**: Automatic builds and tests on every push
+  - Multi-platform builds (Linux, Windows, macOS)
+  - Multiple compilers (GCC, Clang, MSVC)
+  - Debug and Release configurations
+  - Perft verification tests
+  - UCI protocol tests
+  - Performance benchmarking
+  - Code coverage reporting
+
+- **Automated Releases**: Binary releases for all platforms
+  - Linux (x86_64)
+  - Windows (x86_64)
+  - macOS (Universal binary: x86_64 + ARM64)
+
+### Benchmarking
+
+Run performance benchmarks:
+
+```bash
+# Python version (detailed)
+python3 scripts/benchmark.py --engine ./build/chess_engine --output results.json
+
+# Shell version (quick)
+./scripts/benchmark.sh --engine ./build/chess_engine --depth 8
+
+# With perft tests
+python3 scripts/benchmark.py --engine ./build/chess_engine --perft
+```
+
+Compare benchmark results:
+
+```bash
+python3 scripts/compare_benchmarks.py old_results.json new_results.json
+```
+
+## CI/CD Pipeline
+
+This project includes a comprehensive CI/CD pipeline with:
+
+- **Multi-platform builds** (Linux, Windows, macOS)
+- **Multiple compilers** (GCC, Clang, MSVC)
+- **Automated testing** (perft, UCI protocol)
+- **Performance benchmarking** with regression detection
+- **Code coverage** reporting
+- **Static analysis** and formatting checks
+- **Automated releases** with binaries for all platforms
+
+**Quick Setup**: See [QUICK_CI_SETUP.md](QUICK_CI_SETUP.md) for 5-minute setup guide
+
+**Full Documentation**: See [.github/CI_CD_GUIDE.md](.github/CI_CD_GUIDE.md) for complete CI/CD documentation
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Before submitting a pull request:
+1. Run local tests: `./scripts/test_ci_locally.sh`
+2. Check formatting: `clang-format -i **/*.cpp **/*.h`
+3. Run benchmarks: `python3 scripts/benchmark.py --engine ./build/chess_engine`
 
 ## Next Steps
 

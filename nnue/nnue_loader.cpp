@@ -1,4 +1,5 @@
 #include "nnue_loader.h"
+#include "stockfish_nnue.h"
 #include <cstring>
 #include <random>
 #include <iostream>
@@ -6,12 +7,30 @@
 namespace chess {
 
 struct NetworkHeader {
-    uint32_t version;      // Format version
+    uint32_t version;
     uint32_t input_size;
     uint32_t hidden_size;
     uint32_t output_size;
-    uint32_t checksum;     // Simple checksum
+    uint32_t checksum;
 };
+
+NnueLoader::NetworkFormat NnueLoader::detect_format(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        return NATIVE;
+    }
+    
+    uint32_t magic;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.close();
+    
+    // Stockfish NNUE magic number
+    if (magic == 0x7AF32F16 || magic == 0x7AF32F17) {
+        return STOCKFISH;
+    }
+    
+    return NATIVE;
+}
 
 bool NnueLoader::load_from_file(const std::string& filename,
                                 int16_t*& input_weights,
@@ -21,6 +40,44 @@ bool NnueLoader::load_from_file(const std::string& filename,
                                 int& input_size,
                                 int& hidden_size,
                                 int& output_size) {
+    NetworkFormat format = detect_format(filename);
+    
+    std::cout << "Detected network format: " 
+              << (format == STOCKFISH ? "Stockfish" : "Native") << std::endl;
+    
+    return load_from_file_format(filename, format, input_weights, hidden_bias,
+                                 output_weights, output_bias, input_size, 
+                                 hidden_size, output_size);
+}
+
+bool NnueLoader::load_from_file_format(const std::string& filename,
+                                       NetworkFormat format,
+                                       int16_t*& input_weights,
+                                       int16_t*& hidden_bias,
+                                       int16_t*& output_weights,
+                                       int16_t*& output_bias,
+                                       int& input_size,
+                                       int& hidden_size,
+                                       int& output_size) {
+    if (format == STOCKFISH) {
+        return load_stockfish_format(filename, input_weights, hidden_bias,
+                                    output_weights, output_bias, input_size,
+                                    hidden_size, output_size);
+    } else {
+        return load_native_format(filename, input_weights, hidden_bias,
+                                 output_weights, output_bias, input_size,
+                                 hidden_size, output_size);
+    }
+}
+
+bool NnueLoader::load_native_format(const std::string& filename,
+                                    int16_t*& input_weights,
+                                    int16_t*& hidden_bias,
+                                    int16_t*& output_weights,
+                                    int16_t*& output_bias,
+                                    int& input_size,
+                                    int& hidden_size,
+                                    int& output_size) {
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open network file: " << filename << std::endl;
@@ -39,13 +96,11 @@ bool NnueLoader::load_from_file(const std::string& filename,
     hidden_size = header.hidden_size;
     output_size = header.output_size;
     
-    // Allocate memory
     input_weights = new int16_t[input_size * hidden_size];
     hidden_bias = new int16_t[hidden_size];
     output_weights = new int16_t[hidden_size * output_size];
     output_bias = new int16_t[output_size];
     
-    // Read weights
     file.read(reinterpret_cast<char*>(input_weights), input_size * hidden_size * sizeof(int16_t));
     file.read(reinterpret_cast<char*>(hidden_bias), hidden_size * sizeof(int16_t));
     file.read(reinterpret_cast<char*>(output_weights), hidden_size * output_size * sizeof(int16_t));
@@ -62,7 +117,31 @@ bool NnueLoader::load_from_file(const std::string& filename,
     }
     
     file.close();
+    std::cout << "Loaded native NNUE network" << std::endl;
     return true;
+}
+
+bool NnueLoader::load_stockfish_format(const std::string& filename,
+                                       int16_t*& input_weights,
+                                       int16_t*& hidden_bias,
+                                       int16_t*& output_weights,
+                                       int16_t*& output_bias,
+                                       int& input_size,
+                                       int& hidden_size,
+                                       int& output_size) {
+    StockfishNnueLoader::StockfishNetwork sf_network;
+    
+    if (!StockfishNnueLoader::load(filename, sf_network)) {
+        return false;
+    }
+    
+    bool success = StockfishNnueLoader::convert_to_native(
+        sf_network, input_weights, hidden_bias, output_weights, output_bias,
+        input_size, hidden_size, output_size
+    );
+    
+    sf_network.cleanup();
+    return success;
 }
 
 bool NnueLoader::save_to_file(const std::string& filename,

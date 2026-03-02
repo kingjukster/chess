@@ -30,6 +30,10 @@ int NnueEval::feature_index(Square king_sq, Square piece_sq, PieceType pt, Color
     int color_idx = piece_color;
     int piece_offset = (piece_sq * PIECE_TYPES + pt_idx) * 2 + color_idx;
     
+    // Stockfish HalfKP uses 641 features per king (41024 total); our format uses 640 (40960)
+    if (use_stockfish_features) {
+        return king_sq * 641 + piece_offset;
+    }
     return king_sq * FEATURES_PER_KING + piece_offset;
 }
 
@@ -265,6 +269,7 @@ void NnueEval::initialize(Position& pos) {
 bool NnueEval::load_network(const std::string& filename) {
     // Clean up old network
     network.cleanup();
+    use_stockfish_features = false;
     
     bool success = NnueLoader::load_from_file(
         filename,
@@ -279,6 +284,7 @@ bool NnueEval::load_network(const std::string& filename) {
     
     if (success) {
         network.loaded = true;
+        use_stockfish_features = (network.input_size == 41024);  // Stockfish HalfKP
         std::cout << "Loaded NNUE network: " << filename << std::endl;
         std::cout << "  Input size: " << network.input_size << std::endl;
         std::cout << "  Hidden size: " << network.hidden_size << std::endl;

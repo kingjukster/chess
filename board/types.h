@@ -51,34 +51,71 @@ enum CastlingRights : int {
 using Bitboard = uint64_t;
 
 // Move encoding: 16-bit packed format
-// Bits 0-5: from square
-// Bits 6-11: to square
-// Bits 12-13: promotion piece type (0=none, 1=knight, 2=bishop, 3=rook, 4=queen)
-// Bit 14: capture flag
-// Bit 15: special move flag (castling, en passant)
+// Bits 0-5: from square (6 bits)
+// Bits 6-11: to square (6 bits)
+// Bits 12-15: flags (4 bits) encoding:
+//   0: normal move
+//   1: capture
+//   2: castling
+//   3: en passant
+//   4-5: knight promotion (quiet/capture)
+//   6-7: bishop promotion (quiet/capture)
+//   8-9: rook promotion (quiet/capture)
+//   10-11: queen promotion (quiet/capture)
 struct Move {
     uint16_t data;
 
     constexpr Move() : data(0) {}
     constexpr Move(uint16_t d) : data(d) {}
     constexpr Move(Square from, Square to, PieceType promo = NO_PIECE, bool capture = false, bool special = false)
-        : data((from) | (to << 6) | ((promo - 1) << 12) | (capture ? (1 << 14) : 0) | (special ? (1 << 15) : 0)) {}
+        : data((from >= 64 || to >= 64) ? 0 : ((from) | (to << 6) | (encode_flags(promo, capture, special) << 12))) {}
 
     Square from() const { return data & 0x3F; }
     Square to() const { return (data >> 6) & 0x3F; }
-    PieceType promotion() const { 
-        int p = (data >> 12) & 0x3;
-        return p == 0 ? NO_PIECE : static_cast<PieceType>(p + 1);
+    
+    PieceType promotion() const {
+        int flags = (data >> 12) & 0xF;
+        if (flags >= 4 && flags <= 11) {
+            return static_cast<PieceType>(KNIGHT + (flags - 4) / 2);
+        }
+        return NO_PIECE;
     }
-    bool is_capture() const { return (data >> 14) & 1; }
-    bool is_special() const { return (data >> 15) & 1; }
+    
+    bool is_capture() const {
+        int flags = (data >> 12) & 0xF;
+        return (flags == 1) || (flags == 3) || (flags == 5) || (flags == 7) || (flags == 9) || (flags == 11);
+    }
+    
+    bool is_special() const {
+        int flags = (data >> 12) & 0xF;
+        return (flags == 2) || (flags == 3);
+    }
+    
     bool is_promotion() const { return promotion() != NO_PIECE; }
-    bool is_castling() const { return is_special() && !is_capture(); }
-    bool is_en_passant() const { return is_special() && is_capture(); }
+    bool is_castling() const { return ((data >> 12) & 0xF) == 2; }
+    bool is_en_passant() const { return ((data >> 12) & 0xF) == 3; }
 
     bool operator==(const Move& other) const { return data == other.data; }
     bool operator!=(const Move& other) const { return data != other.data; }
-    bool is_valid() const { return from() != to() && from() < 64 && to() < 64; }
+    bool is_valid() const { 
+        // Check if the move is not a null move and squares are different
+        if (data == 0) return false;
+        Square f = from();
+        Square t = to();
+        return f != t;
+    }
+
+private:
+    static constexpr int encode_flags(PieceType promo, bool capture, bool special) {
+        if (promo != NO_PIECE) {
+            int base = 4 + (promo - KNIGHT) * 2;
+            return capture ? base + 1 : base;
+        }
+        if (special) {
+            return capture ? 3 : 2;
+        }
+        return capture ? 1 : 0;
+    }
 };
 
 constexpr Move MOVE_NONE(0);

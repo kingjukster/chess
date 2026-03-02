@@ -1,3 +1,0 @@
-C:/Users/horne/projects/chess_engine/chess/build/CMakeFiles/chess_engine.dir
-C:/Users/horne/projects/chess_engine/chess/build/CMakeFiles/ALL_BUILD.dir
-C:/Users/horne/projects/chess_engine/chess/build/CMakeFiles/ZERO_CHECK.dir

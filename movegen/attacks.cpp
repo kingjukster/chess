@@ -53,9 +53,9 @@ void Attacks::init_non_sliders() {
         Bitboard bb = 1ULL << sq;
         king_attacks_table[sq] = 
             ((bb << 8) | (bb >> 8)) |
-            (((bb << 1) | (bb >> 1)) & ~0x8080808080808080ULL) |
-            (((bb << 9) | (bb >> 9)) & ~0x0101010101010101ULL) |
-            (((bb << 7) | (bb >> 7)) & ~0x8080808080808080ULL);
+            (((bb & ~0x8080808080808080ULL) << 1) | ((bb & ~0x0101010101010101ULL) >> 1)) |
+            (((bb & ~0x8080808080808080ULL) << 9) | ((bb & ~0x0101010101010101ULL) >> 9)) |
+            (((bb & ~0x0101010101010101ULL) << 7) | ((bb & ~0x8080808080808080ULL) >> 7));
     }
 }
 
@@ -128,8 +128,48 @@ Bitboard Attacks::generate_bishop_attacks(Square sq, Bitboard occupancy) {
 void Attacks::init_sliders() {
     // Initialize masks
     for (Square sq = 0; sq < 64; sq++) {
-        rook_masks[sq] = generate_rook_attacks(sq, 0) & ~((1ULL << sq) | 0xFFULL | (0x0101010101010101ULL << (sq & 7)) | (0x0101010101010101ULL >> (7 - (sq & 7))));
-        bishop_masks[sq] = generate_bishop_attacks(sq, 0) & ~(1ULL << sq);
+        int rank = rank_of(sq);
+        int file = file_of(sq);
+        
+        // Rook mask: exclude edge ranks and files
+        Bitboard rook_mask = 0;
+        // North (exclude rank 7)
+        for (int r = rank + 1; r < 7; r++) {
+            rook_mask |= 1ULL << make_square(file, r);
+        }
+        // South (exclude rank 0)
+        for (int r = rank - 1; r > 0; r--) {
+            rook_mask |= 1ULL << make_square(file, r);
+        }
+        // East (exclude file 7)
+        for (int f = file + 1; f < 7; f++) {
+            rook_mask |= 1ULL << make_square(f, rank);
+        }
+        // West (exclude file 0)
+        for (int f = file - 1; f > 0; f--) {
+            rook_mask |= 1ULL << make_square(f, rank);
+        }
+        rook_masks[sq] = rook_mask;
+        
+        // Bishop mask: exclude edge squares
+        Bitboard bishop_mask = 0;
+        // Northeast (exclude edges)
+        for (int r = rank + 1, f = file + 1; r < 7 && f < 7; r++, f++) {
+            bishop_mask |= 1ULL << make_square(f, r);
+        }
+        // Northwest (exclude edges)
+        for (int r = rank + 1, f = file - 1; r < 7 && f > 0; r++, f--) {
+            bishop_mask |= 1ULL << make_square(f, r);
+        }
+        // Southeast (exclude edges)
+        for (int r = rank - 1, f = file + 1; r > 0 && f < 7; r--, f++) {
+            bishop_mask |= 1ULL << make_square(f, r);
+        }
+        // Southwest (exclude edges)
+        for (int r = rank - 1, f = file - 1; r > 0 && f > 0; r--, f--) {
+            bishop_mask |= 1ULL << make_square(f, r);
+        }
+        bishop_masks[sq] = bishop_mask;
         
         rook_shifts[sq] = 64 - popcount(rook_masks[sq]);
         bishop_shifts[sq] = 64 - popcount(bishop_masks[sq]);
@@ -187,15 +227,11 @@ Bitboard Attacks::king_attacks(Square sq) {
 }
 
 Bitboard Attacks::bishop_attacks(Square sq, Bitboard occupancy) {
-    Bitboard relevant = occupancy & bishop_masks[sq];
-    int idx = ((relevant * bishop_magics[sq]) >> bishop_shifts[sq]) + (sq * 512);
-    return bishop_table[idx];
+    return generate_bishop_attacks(sq, occupancy);
 }
 
 Bitboard Attacks::rook_attacks(Square sq, Bitboard occupancy) {
-    Bitboard relevant = occupancy & rook_masks[sq];
-    int idx = ((relevant * rook_magics[sq]) >> rook_shifts[sq]) + (sq * 4096);
-    return rook_table[idx];
+    return generate_rook_attacks(sq, occupancy);
 }
 
 Bitboard Attacks::queen_attacks(Square sq, Bitboard occupancy) {
@@ -218,31 +254,47 @@ bool Attacks::is_attacked(const Position& pos, Square sq, Color by_color) {
     Bitboard occupancy = pos.pieces(WHITE) | pos.pieces(BLACK);
     
     // Pawns
-    if (pawn_attacks(sq, static_cast<Color>(1 - by_color)) & pos.pieces(by_color, PAWN)) {
+    Bitboard pawn_attackers = pawn_attacks(sq, static_cast<Color>(1 - by_color)) & pos.pieces(by_color, PAWN);
+    if (pawn_attackers) {
         return true;
     }
     
     // Knights
-    if (knight_attacks(sq) & pos.pieces(by_color, KNIGHT)) {
+    Bitboard knight_attackers = knight_attacks(sq) & pos.pieces(by_color, KNIGHT);
+    if (knight_attackers) {
         return true;
     }
     
-    // Bishops/Queens
-    if ((bishop_attacks(sq, occupancy) | queen_attacks(sq, occupancy)) & (pos.pieces(by_color, BISHOP) | pos.pieces(by_color, QUEEN))) {
+    // Bishops and Queens (diagonal attacks)
+    Bitboard bishop_attackers = bishop_attacks(sq, occupancy) & (pos.pieces(by_color, BISHOP) | pos.pieces(by_color, QUEEN));
+    if (bishop_attackers) {
         return true;
     }
     
-    // Rooks/Queens
-    if ((rook_attacks(sq, occupancy) | queen_attacks(sq, occupancy)) & (pos.pieces(by_color, ROOK) | pos.pieces(by_color, QUEEN))) {
+    // Rooks and Queens (straight attacks)
+    Bitboard rook_attackers = rook_attacks(sq, occupancy) & (pos.pieces(by_color, ROOK) | pos.pieces(by_color, QUEEN));
+    if (rook_attackers) {
         return true;
     }
     
     // King
-    if (king_attacks(sq) & pos.pieces(by_color, KING)) {
+    Bitboard king_attackers = king_attacks(sq) & pos.pieces(by_color, KING);
+    if (king_attackers) {
         return true;
     }
     
     return false;
+}
+
+Bitboard Attacks::attackers_to(const Position& pos, Square sq, Color by_color) {
+    Bitboard occupancy = pos.pieces(WHITE) | pos.pieces(BLACK);
+    Bitboard attackers = 0;
+    attackers |= pawn_attacks(sq, static_cast<Color>(1 - by_color)) & pos.pieces(by_color, PAWN);
+    attackers |= knight_attacks(sq) & pos.pieces(by_color, KNIGHT);
+    attackers |= bishop_attacks(sq, occupancy) & (pos.pieces(by_color, BISHOP) | pos.pieces(by_color, QUEEN));
+    attackers |= rook_attacks(sq, occupancy) & (pos.pieces(by_color, ROOK) | pos.pieces(by_color, QUEEN));
+    attackers |= king_attacks(sq) & pos.pieces(by_color, KING);
+    return attackers;
 }
 
 bool Attacks::in_check(const Position& pos, Color c) {

@@ -35,6 +35,9 @@ public:
     // Check if square is attacked by color
     static bool is_attacked(const Position& pos, Square sq, Color by_color);
     
+    // Get bitboard of all pieces attacking a square (for SEE)
+    static Bitboard attackers_to(const Position& pos, Square sq, Color by_color);
+    
     // Check if king is in check
     static bool in_check(const Position& pos, Color c);
 

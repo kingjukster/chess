@@ -1,0 +1,344 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # Ubuntu with GCC
+          - {
+              name: "Ubuntu GCC Debug",
+              os: ubuntu-latest,
+              compiler: gcc,
+              cc: "gcc-11",
+              cxx: "g++-11",
+              build_type: "Debug",
+              coverage: true
+            }
+          - {
+              name: "Ubuntu GCC Release",
+              os: ubuntu-latest,
+              compiler: gcc,
+              cc: "gcc-11",
+              cxx: "g++-11",
+              build_type: "Release",
+              coverage: false
+            }
+          # Ubuntu with Clang
+          - {
+              name: "Ubuntu Clang Debug",
+              os: ubuntu-latest,
+              compiler: clang,
+              cc: "clang-14",
+              cxx: "clang++-14",
+              build_type: "Debug",
+              coverage: false
+            }
+          - {
+              name: "Ubuntu Clang Release",
+              os: ubuntu-latest,
+              compiler: clang,
+              cc: "clang-14",
+              cxx: "clang++-14",
+              build_type: "Release",
+              coverage: false
+            }
+          # macOS with AppleClang
+          - {
+              name: "macOS Release",
+              os: macos-latest,
+              compiler: clang,
+              cc: "clang",
+              cxx: "clang++",
+              build_type: "Release",
+              coverage: false
+            }
+          # Windows with MSVC
+          - {
+              name: "Windows MSVC Debug",
+              os: windows-latest,
+              compiler: msvc,
+              build_type: "Debug",
+              coverage: false
+            }
+          - {
+              name: "Windows MSVC Release",
+              os: windows-latest,
+              compiler: msvc,
+              build_type: "Release",
+              coverage: false
+            }
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/ccache
+        key: ${{ runner.os }}-${{ matrix.config.compiler }}-${{ matrix.config.build_type }}-${{ hashFiles('**/CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.config.compiler }}-${{ matrix.config.build_type }}-
+          ${{ runner.os }}-${{ matrix.config.compiler }}-
+
+    - name: Install dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build ccache
+        if [ "${{ matrix.config.coverage }}" = "true" ]; then
+          sudo apt-get install -y lcov
+        fi
+
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake ninja ccache
+
+    - name: Set up MSVC (Windows)
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure CMake (Unix)
+      if: runner.os != 'Windows'
+      env:
+        CC: ${{ matrix.config.cc }}
+        CXX: ${{ matrix.config.cxx }}
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -G Ninja
+
+    - name: Configure CMake (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }}
+
+    - name: Build
+      run: cmake --build build --config ${{ matrix.config.build_type }} --parallel
+
+    - name: Run Perft Tests
+      working-directory: ${{ github.workspace }}/build
+      run: |
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          ./${{ matrix.config.build_type }}/chess_engine.exe <<EOF
+        perft 1
+        perft 2
+        perft 3
+        perft 4
+        perft 5
+        quit
+        EOF
+        else
+          ./chess_engine <<EOF
+        perft 1
+        perft 2
+        perft 3
+        perft 4
+        perft 5
+        quit
+        EOF
+        fi
+      shell: bash
+
+    - name: Run Basic UCI Tests
+      working-directory: ${{ github.workspace }}/build
+      run: |
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          ENGINE="./${{ matrix.config.build_type }}/chess_engine.exe"
+        else
+          ENGINE="./chess_engine"
+        fi
+        
+        # Test UCI initialization
+        echo "uci" | $ENGINE | grep -q "uciok" || exit 1
+        
+        # Test isready
+        echo "isready" | $ENGINE | grep -q "readyok" || exit 1
+        
+        # Test position and go
+        $ENGINE <<EOF | grep -q "bestmove"
+        uci
+        isready
+        ucinewgame
+        position startpos
+        go depth 5
+        quit
+        EOF
+        
+        echo "All UCI tests passed!"
+      shell: bash
+
+    - name: Generate Coverage Report
+      if: matrix.config.coverage
+      working-directory: ${{ github.workspace }}
+      run: |
+        lcov --directory build --capture --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' '*/test/*' --output-file coverage.info
+        lcov --list coverage.info
+
+    - name: Upload Coverage to Codecov
+      if: matrix.config.coverage
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage.info
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Upload Build Artifacts
+      if: matrix.config.build_type == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: chess_engine-${{ runner.os }}-${{ matrix.config.compiler }}
+        path: |
+          build/chess_engine*
+          build/Release/chess_engine.exe
+        retention-days: 7
+
+  benchmark:
+    name: Performance Benchmark
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build python3 python3-pip
+        pip3 install matplotlib pandas
+
+    - name: Build Release
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+        cmake --build build --parallel
+
+    - name: Run Benchmark
+      run: |
+        chmod +x scripts/benchmark.py
+        python3 scripts/benchmark.py --engine build/chess_engine --output benchmark_results.json
+
+    - name: Download Previous Benchmark
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        name: benchmark-results
+        path: previous_benchmark
+
+    - name: Compare Performance
+      if: success()
+      run: |
+        if [ -f previous_benchmark/benchmark_results.json ]; then
+          python3 scripts/compare_benchmarks.py \
+            previous_benchmark/benchmark_results.json \
+            benchmark_results.json
+        else
+          echo "No previous benchmark found, skipping comparison"
+        fi
+
+    - name: Upload Benchmark Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: benchmark_results.json
+        retention-days: 90
+
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const results = JSON.parse(fs.readFileSync('benchmark_results.json', 'utf8'));
+          
+          let comment = '## 🚀 Performance Benchmark Results\n\n';
+          comment += '| Position | Nodes/sec | Time (ms) |\n';
+          comment += '|----------|-----------|----------|\n';
+          
+          for (const [pos, data] of Object.entries(results.positions)) {
+            comment += `| ${pos} | ${data.nps.toLocaleString()} | ${data.time_ms} |\n`;
+          }
+          
+          comment += `\n**Average NPS:** ${results.average_nps.toLocaleString()}\n`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install clang-tidy
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-tidy-14
+
+    - name: Run clang-tidy
+      run: |
+        cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        find . -name '*.cpp' -not -path './build/*' -not -path './training/*' | \
+          xargs clang-tidy-14 -p build --warnings-as-errors='' || true
+
+  format-check:
+    name: Code Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format-14
+
+    - name: Check formatting
+      run: |
+        find . -name '*.cpp' -o -name '*.h' | \
+          grep -v './build/' | \
+          grep -v './training/' | \
+          xargs clang-format-14 --dry-run --Werror || true
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [build-and-test, benchmark, static-analysis, format-check]
+    if: always()
+
+    steps:
+    - name: Check CI Status
+      run: |
+        if [ "${{ needs.build-and-test.result }}" != "success" ]; then
+          echo "Build and test failed"
+          exit 1
+        fi
+        echo "✅ All CI checks passed!"

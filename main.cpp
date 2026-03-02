@@ -3,6 +3,9 @@
 #include <iostream>
 
 int main() {
+    // Unbuffered stdout - critical for UCI GUIs (e.g. Arena) on Windows
+    std::cout << std::unitbuf;
+
     // Initialize attack tables
     chess::Attacks::init();
     
